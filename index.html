@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Neon Snake</title>
+<style>
+:root {
+  --bg: #07040f; --cyan: #00f5d4; --pink: #ff2e88; --violet: #8a5cff; --amber: #ffd23f; --ink: #e9e4ff;
+  --font: "Trebuchet MS", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: var(--font); touch-action: none; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#app { position: fixed; inset: 0; height: 100dvh; }
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#hud {
+  position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start;
+  padding: calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));
+  pointer-events: none; transition: opacity .4s; opacity: 0; gap: 12px;
+}
+#app[data-phase="playing"] #hud { opacity: 1; }
+#app[data-phase="paused"] #hud { opacity: .55; }
+#app[data-phase="over"] #hud { opacity: .25; }
+.stat { display: flex; flex-direction: column; min-width: 0; }
+.stat.r { align-items: flex-end; }
+.stat.m { align-items: center; }
+.lbl { font: 700 11px/1 var(--mono); letter-spacing: .28em; color: var(--violet); text-shadow: 0 0 8px var(--violet); }
+.val {
+  font: 800 clamp(22px, 4.2vw, 40px)/1.1 var(--mono); font-variant-numeric: tabular-nums; color: var(--cyan);
+  text-shadow: 0 0 6px var(--cyan), 0 0 18px rgba(0, 245, 212, .55); display: inline-block; transform-origin: left center;
+}
+.stat.r .val { color: var(--pink); text-shadow: 0 0 6px var(--pink), 0 0 18px rgba(255, 46, 136, .55); transform-origin: right center; }
+.stat.m .val { color: var(--amber); text-shadow: 0 0 6px var(--amber), 0 0 18px rgba(255, 210, 63, .5); transform-origin: center; }
+.pop { animation: pop .22s ease-out; }
+@keyframes pop { 0% { transform: scale(1.28); } 100% { transform: scale(1); } }
+
+#combo {
+  position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); width: min(280px, 56vw);
+  transform: translate(-50%, -6px); opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none;
+  display: flex; align-items: center; gap: 10px;
+}
+#combo.on { opacity: 1; transform: translate(-50%, 0); }
+#app:not([data-phase="playing"]) #combo { opacity: 0; }
+#combo-x { font: 900 22px/1 var(--mono); color: var(--pink); text-shadow: 0 0 10px var(--pink); min-width: 2.6em; text-align: right; }
+.meter { flex: 1; height: 8px; border-radius: 4px; background: rgba(138, 92, 255, .22); overflow: hidden; box-shadow: 0 0 10px rgba(138, 92, 255, .35); }
+#combo-bar {
+  display: block; height: 100%; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--violet), var(--pink), var(--amber)); box-shadow: 0 0 12px var(--pink);
+}
+#combo-bar.low { animation: blink .28s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+
+#chips {
+  position: absolute; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none;
+}
+.chip {
+  --c: #fff; position: relative; display: none; align-items: center; gap: 8px; padding: 6px 12px 9px; border-radius: 999px;
+  border: 1px solid var(--c); color: var(--c); background: rgba(7, 4, 15, .72); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 50%, transparent);
+  font: 800 12px/1 var(--mono); letter-spacing: .12em; overflow: hidden; animation: chipin .25s ease-out;
+}
+.chip.on { display: flex; }
+.chip .b { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--c); transform-origin: left center; }
+.chip .t { min-width: 3ch; text-align: right; opacity: .85; }
+@keyframes chipin { from { transform: translateY(10px) scale(.9); opacity: 0; } }
+
+#toast {
+  position: absolute; left: 50%; top: 30%; transform: translate(-50%, 10px) scale(.9); opacity: 0; pointer-events: none;
+  font: 900 clamp(32px, 8vw, 80px)/1 var(--font); letter-spacing: .12em; font-style: italic; color: #fff;
+  text-shadow: 0 0 10px var(--cyan), 0 0 30px var(--cyan), 0 0 60px var(--violet); transition: opacity .3s, transform .3s; white-space: nowrap;
+}
+#app:not([data-phase="playing"]) #toast { opacity: 0; }
+#toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+#btn-pause, #mute {
+  pointer-events: auto; position: absolute; top: calc(10px + env(safe-area-inset-top)); width: 40px; height: 40px; border-radius: 10px;
+  border: 1px solid rgba(138, 92, 255, .6); background: rgba(7, 4, 15, .6); color: var(--ink); font: 800 14px var(--mono); cursor: pointer;
+  opacity: 0; transition: opacity .3s;
+}
+#btn-pause { right: calc(14px + env(safe-area-inset-right)); top: calc(64px + env(safe-area-inset-top)); }
+#mute { right: calc(62px + env(safe-area-inset-right)); top: calc(64px + env(safe-area-inset-top)); text-decoration: none; }
+#mute.on { color: var(--pink); text-decoration: line-through; }
+#app[data-phase="playing"] #btn-pause, #app[data-phase="playing"] #mute { opacity: .8; }
+#app[data-phase="paused"] #btn-pause { opacity: .8; }
+
+.ov {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(7, 4, 15, .35), rgba(7, 4, 15, .82));
+  transition: opacity .4s ease, visibility 0s linear .4s, backdrop-filter .4s;
+}
+.ov .panel { transform: translateY(14px) scale(.96); transition: transform .45s cubic-bezier(.2, .9, .3, 1.2); max-width: 560px; width: 100%; }
+#app[data-phase="title"] #title, #app[data-phase="paused"] #pause, #app[data-phase="over"] #over {
+  opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .4s ease, visibility 0s;
+}
+#app[data-phase="paused"] #pause { backdrop-filter: blur(5px); }
+#app[data-phase="over"] #over { transition: opacity .6s ease .75s, visibility 0s linear .75s; backdrop-filter: blur(3px); }
+#app[data-phase="title"] #title .panel, #app[data-phase="paused"] #pause .panel { transform: none; }
+#app[data-phase="over"] #over .panel { transform: none; transition-delay: .75s; }
+
+.logo { margin: 0 0 10px; font: 900 clamp(48px, 13vw, 128px)/.95 var(--font); font-style: italic; letter-spacing: .06em; text-transform: uppercase; }
+.logo span { display: block; }
+.logo .a { color: #fff; text-shadow: 0 0 6px var(--cyan), 0 0 20px var(--cyan), 0 0 48px var(--cyan); }
+.logo .b { color: #fff; text-shadow: 0 0 6px var(--pink), 0 0 20px var(--pink), 0 0 48px var(--pink); animation: flicker 5s infinite; }
+@keyframes flicker {
+  0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; }
+  20%, 63% { opacity: .35; }
+  21% { opacity: .9; }
+  65% { opacity: .55; }
+}
+.sub { font: 700 13px var(--mono); letter-spacing: .4em; color: var(--violet); text-shadow: 0 0 8px var(--violet); margin-bottom: 26px; }
+.start { font: 800 18px var(--mono); letter-spacing: .3em; color: var(--amber); text-shadow: 0 0 10px var(--amber); animation: pulse 1.4s ease-in-out infinite; margin: 18px 0; }
+@keyframes pulse { 50% { opacity: .35; } }
+.hint { font: 600 13px/1.8 var(--mono); color: rgba(233, 228, 255, .72); }
+.hint kbd { padding: 1px 7px; border: 1px solid rgba(138, 92, 255, .7); border-radius: 5px; color: var(--cyan); background: rgba(138, 92, 255, .12); font: inherit; }
+.settings { display: inline-flex; gap: 22px; margin-top: 22px; padding: 10px 18px; border: 1px solid rgba(138, 92, 255, .4); border-radius: 12px; background: rgba(7, 4, 15, .5); }
+.settings label { display: flex; align-items: center; gap: 8px; font: 700 12px var(--mono); letter-spacing: .2em; cursor: pointer; }
+.settings input { accent-color: var(--pink); width: 18px; height: 18px; cursor: pointer; }
+
+h2 { margin: 0 0 14px; font: 900 clamp(34px, 8vw, 64px)/1 var(--font); font-style: italic; letter-spacing: .1em; color: #fff; }
+#pause h2 { text-shadow: 0 0 8px var(--violet), 0 0 30px var(--violet); }
+#over h2 { text-shadow: 0 0 8px var(--pink), 0 0 30px var(--pink); }
+.big { font: 900 clamp(44px, 10vw, 84px)/1 var(--mono); color: var(--cyan); text-shadow: 0 0 10px var(--cyan), 0 0 36px rgba(0, 245, 212, .6); margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
+.rows { display: grid; grid-template-columns: 1fr auto; gap: 6px 24px; margin: 0 auto 14px; max-width: 340px; font: 700 14px var(--mono); letter-spacing: .08em; text-align: left; }
+.rows dt { color: rgba(233, 228, 255, .65); }
+.rows dd { margin: 0; text-align: right; color: var(--amber); }
+.newbest {
+  display: none; margin: 4px 0 10px; font: 900 22px var(--mono); letter-spacing: .3em; color: var(--amber);
+  text-shadow: 0 0 10px var(--amber), 0 0 30px var(--pink); animation: bounce .7s ease-in-out infinite alternate;
+}
+.newbest.on { display: block; }
+@keyframes bounce { from { transform: scale(1) rotate(-2deg); } to { transform: scale(1.12) rotate(2deg); } }
+
+@media (max-width: 520px) { .settings { gap: 12px; padding: 8px 12px; } .rows { font-size: 13px; } }
+@media (prefers-reduced-motion: reduce) {
+  .logo .b, .start, #combo-bar.low, .newbest, .pop, .chip { animation: none; }
+  .ov, .ov .panel, #toast, #hud, #combo { transition-duration: .01s; transition-delay: 0s !important; }
+  #app[data-phase="over"] #over { transition: opacity .01s, visibility 0s; }
+}
+</style>
+</head>
+<body>
+<div id="app" data-phase="title">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="stat"><span class="lbl">SCORE</span><b class="val" id="hud-score">0</b></div>
+    <div class="stat m"><span class="lbl">LEVEL</span><b class="val" id="hud-level">1</b></div>
+    <div class="stat r"><span class="lbl">HIGH</span><b class="val" id="hud-high">0</b></div>
+  </div>
+
+  <div id="combo"><span id="combo-x">x1</span><span class="meter"><i id="combo-bar"></i></span></div>
+
+  <div id="chips">
+    <div class="chip" id="chip-slow" style="--c:#4da3ff"><span>SLOW</span><span class="t"></span><i class="b"></i></div>
+    <div class="chip" id="chip-ghost" style="--c:#c9b6ff"><span>GHOST</span><span class="t"></span><i class="b"></i></div>
+    <div class="chip" id="chip-magnet" style="--c:#ff9f1c"><span>MAGNET</span><span class="t"></span><i class="b"></i></div>
+    <div class="chip" id="chip-double" style="--c:#ffd23f"><span>x2</span><span class="t"></span><i class="b"></i></div>
+  </div>
+
+  <div id="toast"></div>
+  <button id="mute" type="button" aria-label="Mute">M</button>
+  <button id="btn-pause" type="button" aria-label="Pause">II</button>
+
+  <section class="ov" id="title">
+    <div class="panel">
+      <h1 class="logo"><span class="a">Neon</span><span class="b">Snake</span></h1>
+      <div class="sub">SYNTHWAVE ARCADE</div>
+      <div class="start">PRESS ANY KEY / TAP TO START</div>
+      <div class="hint"><kbd>WASD</kbd> <kbd>ARROWS</kbd> steer &middot; swipe on touch &middot; gamepad d-pad<br><kbd>P</kbd> / <kbd>ESC</kbd> pause &middot; <kbd>M</kbd> mute</div>
+      <div class="settings">
+        <label><input type="checkbox" id="opt-music" checked> MUSIC</label>
+        <label><input type="checkbox" id="opt-sfx" checked> SFX</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="ov" id="pause">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <div class="hint">Press <kbd>P</kbd> / <kbd>ESC</kbd> or tap to resume</div>
+    </div>
+  </section>
+
+  <section class="ov" id="over">
+    <div class="panel">
+      <h2>GAME OVER</h2>
+      <div class="newbest" id="ov-new">NEW HIGH SCORE</div>
+      <div class="big" id="ov-score">0</div>
+      <dl class="rows">
+        <dt>FOOD EATEN</dt><dd id="ov-food">0</dd>
+        <dt>BASE POINTS</dt><dd id="ov-base">0</dd>
+        <dt>COMBO BONUS</dt><dd id="ov-combo">+0</dd>
+        <dt>x2 BONUS</dt><dd id="ov-dbl">+0</dd>
+        <dt>BEST COMBO</dt><dd id="ov-max">x1</dd>
+        <dt>LEVEL</dt><dd id="ov-level">1</dd>
+        <dt>HIGH SCORE</dt><dd id="ov-high">0</dd>
+      </dl>
+      <div class="hint"><kbd>SPACE</kbd> / <kbd>ENTER</kbd> / tap to retry &middot; <kbd>ESC</kbd> title</div>
+    </div>
+  </section>
+</div>
+
+<script src="audio.js"></script>
+<script src="render.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
