@@ -265,9 +265,6 @@ function create(canvas) {
     v.addColorStop(0, 'rgba(0,0,12,0)');
     v.addColorStop(1, 'rgba(0,0,12,.72)');
     g.fillStyle = v; g.fillRect(0, 0, W, H);
-    var pitch = Math.max(2, Math.round(3 * dpr));
-    g.fillStyle = 'rgba(0,0,0,.16)';
-    for (var y = 0; y < H; y += pitch) g.fillRect(0, y, W, Math.max(1, pitch >> 1));
   }
 
   function buildBoard() {
@@ -823,16 +820,6 @@ function create(canvas) {
     g.globalAlpha = phase === 'title' ? 0.85 : 1;
     g.drawImage(boardC.c, ox + shx, oy + shy);
     g.globalAlpha = 1;
-    if (phase === 'title') {
-      var sy = oy + shy + ((T / 5200) % 1) * bh;
-      var sg = g.createLinearGradient(0, sy - 40 * dpr, 0, sy + 4 * dpr);
-      sg.addColorStop(0, 'rgba(34,232,255,0)'); sg.addColorStop(1, 'rgba(34,232,255,.16)');
-      g.fillStyle = sg; g.globalCompositeOperation = 'lighter';
-      g.save(); g.beginPath(); g.rect(ox + shx, oy + shy, bw, bh); g.clip();
-      g.fillRect(ox + shx, sy - 40 * dpr, bw, 44 * dpr);
-      g.restore(); g.globalCompositeOperation = 'source-over';
-    }
-
     scene(g, 1, false, S);
 
     var gg = b1.g;
