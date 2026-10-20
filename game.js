@@ -633,37 +633,56 @@
     dbgEl.textContent = 'fps ' + dbg.fps + ' worst ' + Math.round(dbg.worst) + 'ms dpr ' + (win.devicePixelRatio || 1) +
       '\ntilt sup ' + tiltSupported() + ' on ' + tiltOn + ' set ' + settings.tilt + ' secure ' + win.isSecureContext +
       '\nevents ' + dbg.n + ' b ' + f(dbg.b) + ' g ' + f(dbg.g) + ' angle ' + screenAngle() +
-      '\nx ' + f(dbg.x) + ' y ' + f(dbg.y) + ' zone ' + tiltZone + ' base ' + (tiltBase ? f(tiltBase.b) + '/' + f(tiltBase.g) : '-');
+      '\nx ' + f(dbg.x) + ' y ' + f(dbg.y) + ' zone ' + tiltZone + ' base ' + (tiltBase ? tiltBase.map(f).join('/') : '-');
     dbg.worst = 0;
+  }
+  const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  function upVec(beta, gamma) {
+    const b = beta * Math.PI / 180, g = gamma * Math.PI / 180;
+    const x = -Math.cos(b) * Math.sin(g), y = Math.sin(b), z = Math.cos(b) * Math.cos(g);
+    const a = ((screenAngle() % 360) + 360) % 360;
+    return a === 90 ? [-y, x, z] : a === 180 ? [-x, -y, z] : a === 270 ? [y, -x, z] : [x, y, z];
   }
   function onTilt(e) {
     dbg.n++; dbg.b = e.beta; dbg.g = e.gamma;
     if (e.beta == null || e.gamma == null) return;
     const now = performance.now(), dt = Math.min(200, now - tiltT);
     tiltT = now;
-    if (!tiltBase) { tiltBase = { b: e.beta, g: e.gamma }; tiltZone = null; tsx = tsy = 0; return; }
-    const db = wrap(e.beta - tiltBase.b), dg = wrap(e.gamma - tiltBase.g);
-    const a = ((screenAngle() % 360) + 360) % 360;
-    const x = a === 90 ? db : a === 180 ? -dg : a === 270 ? -db : dg;
-    const y = a === 90 ? -dg : a === 180 ? -db : a === 270 ? dg : db;
+    const u = upVec(e.beta, e.gamma);
+    if (!tiltBase) { tiltBase = u; tiltZone = null; tsx = tsy = 0; return; }
+    const u0 = tiltBase, ax = cross(u0, u), sn = Math.hypot(ax[0], ax[1], ax[2]);
+    let x = 0, y = 0;
+    if (sn > 1e-6) {
+      const th = Math.atan2(sn, dot(u0, u)) * 180 / Math.PI / sn;
+      let e1 = [1 - u0[0] * u0[0], -u0[0] * u0[1], -u0[0] * u0[2]];
+      const l1 = Math.hypot(e1[0], e1[1], e1[2]);
+      e1 = l1 > 1e-3 ? [e1[0] / l1, e1[1] / l1, e1[2] / l1] : [0, 1, 0];
+      const cx = Math.max(0.5, Math.sqrt(1 - u0[1] * u0[1])), cy = Math.max(0.5, Math.sqrt(1 - u0[0] * u0[0]));
+      x = -dot(ax, cross(u0, e1)) * th / cx; y = -dot(ax, e1) * th / cy;
+    }
     const tau = settings.tiltSmooth * 15, k = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
     tsx += (x - tsx) * k; tsy += (y - tsy) * k;
     dbg.x = tsx; dbg.y = tsy;
     const m = Math.hypot(tsx, tsy), on = 13 - settings.tiltSens;
     if (m < on / 2) {
       tiltZone = null;
-      const d = settings.tiltAuto ? dt / TILT_DRIFT : 0;
-      tiltBase.b += db * d; tiltBase.g += dg * d;
+      if (settings.tiltAuto) {
+        const d = dt / TILT_DRIFT, v = [u0[0] + (u[0] - u0[0]) * d, u0[1] + (u[1] - u0[1]) * d, u0[2] + (u[2] - u0[2]) * d];
+        const l = Math.hypot(v[0], v[1], v[2]);
+        tiltBase = [v[0] / l, v[1] / l, v[2] / l];
+      }
       return;
     }
-    if (m < on) return;
     const ang = Math.atan2(tsy, tsx) * 180 / Math.PI;
-    if (tiltZone !== null && Math.abs(wrap(ang - ZANG[tiltZone])) < 45 + settings.tiltHold) return;
-    let z = 0;
-    for (let i = 1; i < 4; i++) if (Math.abs(wrap(ang - ZANG[i])) < Math.abs(wrap(ang - ZANG[z]))) z = i;
-    if (z === tiltZone) return;
-    tiltZone = z;
-    onDir(DIRS[z]);
+    if (m >= on && (tiltZone === null || Math.abs(wrap(ang - ZANG[tiltZone])) >= 45 + settings.tiltHold)) {
+      let z = 0;
+      for (let i = 1; i < 4; i++) if (Math.abs(wrap(ang - ZANG[i])) < Math.abs(wrap(ang - ZANG[z]))) z = i;
+      tiltZone = z;
+    }
+    if (tiltZone === null || phase !== 'playing') return;
+    const want = DIRS[tiltZone], from = queue.length ? queue[queue.length - 1] : dir;
+    if (isTurn(want, from)) onDir(want);
   }
   function showOpts(on) {
     if (app) app.classList[on ? 'add' : 'remove']('opts-open');
