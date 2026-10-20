@@ -680,6 +680,8 @@
     e.classList.add('pop');
   }
   const cache = {};
+  const chips = {};
+  let popScore = 0;
   function txt(key, e, v) {
     if (!e || cache[key] === v) return;
     cache[key] = v; e.textContent = v;
@@ -691,8 +693,8 @@
     if (dispScore < score) {
       const inc = Math.max(1, Math.ceil((score - dispScore) * Math.min(1, dt / 140)));
       dispScore = Math.min(score, dispScore + inc);
-      popEl(el.score);
     }
+    if (score !== popScore) { if (score > popScore) popEl(el.score); popScore = score; }
     if (dispHigh > hs) dispHigh = hs;
     if (dispHigh < hs) dispHigh = Math.min(hs, dispHigh + Math.max(1, Math.ceil((hs - dispHigh) * Math.min(1, dt / 140))));
     txt('s', el.score, String(dispScore));
@@ -713,7 +715,9 @@
       }
     }
     for (const k of KINDS) {
-      const chip = $('chip-' + k);
+      let cc = chips[k];
+      if (!cc) { const e = $('chip-' + k); cc = chips[k] = e ? { e, t: e.querySelector('.t'), b: e.querySelector('.b') } : { e: null }; }
+      const chip = cc.e;
       if (!chip) continue;
       const on2 = active[k] > 0;
       if (cache['c' + k] !== on2) { cache['c' + k] = on2; chip.classList[on2 ? 'add' : 'remove']('on'); }
@@ -721,10 +725,8 @@
         const sec = (active[k] / 1000).toFixed(1);
         if (cache['t' + k] !== sec) {
           cache['t' + k] = sec;
-          const t = chip.querySelector && chip.querySelector('.t');
-          if (t) t.textContent = sec;
-          const b = chip.querySelector && chip.querySelector('.b');
-          if (b) b.style.transform = 'scaleX(' + Math.min(1, active[k] / DUR[k]).toFixed(3) + ')';
+          if (cc.t) cc.t.textContent = sec;
+          if (cc.b) cc.b.style.transform = 'scaleX(' + Math.min(1, active[k] / DUR[k]).toFixed(3) + ')';
         }
       }
     }
@@ -757,6 +759,7 @@
   let errAt = 0;
   function frame(now) {
     win.requestAnimationFrame(frame);
+    if (last !== null && now - last < 15) return;
     const dt = last === null ? 0 : Math.min(Math.max(now - last, 0), 250);
     last = now;
     pollPad();
@@ -773,7 +776,14 @@
     }
   }
 
+  let rzPend = false;
   function resize() {
+    if (rzPend) return;
+    rzPend = true;
+    win.requestAnimationFrame(doResize);
+  }
+  function doResize() {
+    rzPend = false;
     const w = win.innerWidth || 800, h = win.innerHeight || 600, dpr = Math.min(win.devicePixelRatio || 1, 2);
     if (R && typeof R.resize === 'function') R.resize(w, h, dpr);
   }

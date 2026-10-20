@@ -72,7 +72,8 @@ function sprite(col) {
 }
 
 function create(canvas) {
-  var ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   var r = {
     palette: {
       food: '#ffb02e',
@@ -340,12 +341,12 @@ function create(canvas) {
   }
 
   r.resize = function (cw, ch, d) {
-    dpr = d || 1;
-    W = Math.max(2, Math.round(cw * dpr));
-    H = Math.max(2, Math.round(ch * dpr));
+    var nd = d || 1, nW = Math.max(2, Math.round(cw * nd)), nH = Math.max(2, Math.round(ch * nd));
+    if (ready && nW === W && nH === H && nd === dpr) return;
+    dpr = nd; W = nW; H = nH;
     canvas.width = W; canvas.height = H;
     if (canvas.style) { canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px'; }
-    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    ctx = canvas.getContext('2d', { alpha: false });
     setBuffers();
     buildSky();
     buildOvl();
@@ -420,7 +421,7 @@ function create(canvas) {
 
     var L = 0;
     for (i = 1; i < np; i++) if (!fb[i]) L += Math.hypot(fx[i] - fx[i - 1], fy[i] - fy[i - 1]);
-    var step = Math.max(0.15, L / 1500), R = 0.4, s = 0, next = 0;
+    var step = (coarse ? Math.max(0.3, L / 600) : Math.max(0.15, L / 1500)), R = 0.4, s = 0, next = 0;
     growS(Math.ceil(L / step) + 8);
 
     function emit(x, y, sd) {
@@ -473,20 +474,24 @@ function create(canvas) {
 
   function drawSnake(g, glow) {
     var i;
+    var j, c;
     if (glow) {
       var gs = 1.2 + 0.07 * (gi * 5);
-      for (i = ns - 1; i >= 0; i--) {
-        g.fillStyle = bodyS[sC[i]];
-        g.beginPath(); g.arc(sX[i], sY[i], sR[i] * gs, 0, TAU); g.fill();
+      for (i = ns - 1; i >= 0; i = j) {
+        c = sC[i]; g.fillStyle = bodyS[c]; g.beginPath();
+        for (j = i; j >= 0 && sC[j] === c; j--) { g.moveTo(sX[j] + sR[j] * gs, sY[j]); g.arc(sX[j], sY[j], sR[j] * gs, 0, TAU); }
+        g.fill();
       }
     } else {
-      for (i = ns - 1; i >= 0; i--) {
-        g.fillStyle = bodyS[sC[i]];
-        g.beginPath(); g.arc(sX[i], sY[i], sR[i], 0, TAU); g.fill();
+      for (i = ns - 1; i >= 0; i = j) {
+        c = sC[i]; g.fillStyle = bodyS[c]; g.beginPath();
+        for (j = i; j >= 0 && sC[j] === c; j--) { g.moveTo(sX[j] + sR[j], sY[j]); g.arc(sX[j], sY[j], sR[j], 0, TAU); }
+        g.fill();
       }
-      for (i = ns - 1; i >= 0; i--) {
-        g.fillStyle = coreS[sC[i]];
-        g.beginPath(); g.arc(sX[i], sY[i], sR[i] * 0.45, 0, TAU); g.fill();
+      for (i = ns - 1; i >= 0; i = j) {
+        c = sC[i]; g.fillStyle = coreS[c]; g.beginPath();
+        for (j = i; j >= 0 && sC[j] === c; j--) { g.moveTo(sX[j] + sR[j] * 0.45, sY[j]); g.arc(sX[j], sY[j], sR[j] * 0.45, 0, TAU); }
+        g.fill();
       }
     }
     var ox_ = headX < 0.8 ? gw : headX > gw - 0.8 ? -gw : 0;
@@ -836,17 +841,17 @@ function create(canvas) {
     gg.clearRect(0, 0, b1.c.width, b1.c.height);
     scene(gg, bk, true, S);
     gg.setTransform(1, 0, 0, 1, 0, 0); gg.globalAlpha = 1;
-    bm.g.imageSmoothingQuality = 'high'; b2.g.imageSmoothingQuality = 'high';
+    bm.g.imageSmoothingQuality = 'low'; b2.g.imageSmoothingQuality = 'low';
     bm.g.clearRect(0, 0, bm.c.width, bm.c.height);
     bm.g.drawImage(b1.c, 0, 0, bm.c.width, bm.c.height);
     b2.g.clearRect(0, 0, b2.c.width, b2.c.height);
     b2.g.drawImage(bm.c, 0, 0, b2.c.width, b2.c.height);
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'low';
     var bl = r.nobloom ? 0 : 0.65 + gi * 0.5;
     if (bl > 0) {
       var cg = bc.g, cw = bc.c.width, ch = bc.c.height;
-      cg.globalCompositeOperation = 'copy'; cg.globalAlpha = 0.2; cg.imageSmoothingQuality = 'high';
+      cg.globalCompositeOperation = 'copy'; cg.globalAlpha = 0.2; cg.imageSmoothingQuality = 'low';
       cg.drawImage(b1.c, 0, 0);
       cg.globalCompositeOperation = 'lighter';
       cg.globalAlpha = 0.35; cg.drawImage(bm.c, 0, 0, cw, ch);
@@ -862,11 +867,13 @@ function create(canvas) {
     }
     if (phase === 'over') {
       var k = sstep((S.phaseMs || 0) / 900);
-      g.globalCompositeOperation = 'saturation';
-      g.globalAlpha = 0.88 * k; g.fillStyle = '#808080';
-      g.fillRect(0, 0, W, H);
+      if (!coarse) {
+        g.globalCompositeOperation = 'saturation';
+        g.globalAlpha = 0.88 * k; g.fillStyle = '#808080';
+        g.fillRect(0, 0, W, H);
+      }
       g.globalCompositeOperation = 'source-over';
-      g.globalAlpha = 0.38 * k; g.fillStyle = '#12000e';
+      g.globalAlpha = (coarse ? 0.5 : 0.38) * k; g.fillStyle = '#12000e';
       g.fillRect(0, 0, W, H);
       g.globalAlpha = 1;
     } else if (phase === 'paused') {
@@ -879,7 +886,7 @@ function create(canvas) {
       g.fillRect(0, 0, W, H);
       g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     }
-    if (ca > 0.02) chroma(g, ca * ca);
+    if (!coarse && ca > 0.02) chroma(g, ca * ca);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = 1;
     g.drawImage(ovl.c, 0, 0);
