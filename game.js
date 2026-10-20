@@ -2,6 +2,7 @@
   'use strict';
 
   const N = 24, START_TICK = 150, STEP = 15, MIN_TICK = 60, GRACE = 0.5, QMAX = 2;
+  const TILT_ON = 14, TILT_OFF = 8, TILT_BIAS = 4;
   const FOOD_PER_LEVEL = 5, BASE_PTS = 10, SLOW_MUL = 1.6, MAG_R = 5, PU_TTL = 10000;
   const DUR = { slow: 6000, ghost: 5000, magnet: 7000, double: 8000 };
   const KINDS = Object.keys(DUR);
@@ -30,7 +31,7 @@
     toast: $('toast'), mute: $('mute'),
     ovScore: $('ov-score'), ovFood: $('ov-food'), ovBase: $('ov-base'), ovCombo: $('ov-combo'),
     ovDbl: $('ov-dbl'), ovMax: $('ov-max'), ovLevel: $('ov-level'), ovHigh: $('ov-high'),
-    ovNew: $('ov-new'), optMusic: $('opt-music'), optSfx: $('opt-sfx'), btnPause: $('btn-pause')
+    ovNew: $('ov-new'), optMusic: $('opt-music'), optSfx: $('opt-sfx'), optTilt: $('opt-tilt'), btnPause: $('btn-pause')
   };
 
   const rnd = (n) => Math.floor(Math.random() * n);
@@ -44,13 +45,13 @@
   let spawnIn, maxCombo, basePts, comboBonus, dblBonus, newBest, lastIntensity = -1, intensityAt = 0;
   let high = 0, dispScore = 0, dispHigh = 0, celebAt = 0, toastUntil = 0, pausedFrom = 'playing';
   let muted = false, audioReady = false, reducedMotion = false;
-  let settings = { music: true, sfx: true };
+  let settings = { music: true, sfx: true, tilt: false };
   let last = null;
 
   try { high = Number(localStorage.getItem(HIGH_KEY)) || 0; } catch (e) { high = 0; }
   try {
     const s = JSON.parse(localStorage.getItem(SET_KEY));
-    if (s && typeof s === 'object') settings = { music: s.music !== false, sfx: s.sfx !== false };
+    if (s && typeof s === 'object') settings = { music: s.music !== false, sfx: s.sfx !== false, tilt: s.tilt === true };
   } catch (e) { /* defaults */ }
   try {
     const mq = win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)');
@@ -92,6 +93,7 @@
   function setPhase(p) {
     phase = p; phaseMs = 0;
     if (app) app.setAttribute('data-phase', p);
+    if (p === 'playing') tiltBase = null;
   }
 
   function occupancy(extra) {
@@ -579,6 +581,41 @@
     confirmAction();
   }
 
+  let tiltBase = null, tiltZone = null, tiltOn = false;
+  const tiltSupported = () => typeof DeviceOrientationEvent !== 'undefined' && (navigator.maxTouchPoints || 0) > 0;
+  const wrap = (a) => ((a + 540) % 360) - 180;
+  function screenAngle() {
+    const o = win.screen && win.screen.orientation;
+    return o && typeof o.angle === 'number' ? o.angle : (Number(win.orientation) || 0);
+  }
+  function onTilt(e) {
+    if (e.beta == null || e.gamma == null) return;
+    if (!tiltBase) { tiltBase = { b: e.beta, g: e.gamma }; tiltZone = null; return; }
+    const db = wrap(e.beta - tiltBase.b), dg = wrap(e.gamma - tiltBase.g);
+    const a = ((screenAngle() % 360) + 360) % 360;
+    const x = a === 90 ? db : a === 180 ? -dg : a === 270 ? -db : dg;
+    const y = a === 90 ? -dg : a === 180 ? -db : a === 270 ? dg : db;
+    const ax = Math.abs(x), ay = Math.abs(y), m = Math.max(ax, ay);
+    if (m < TILT_OFF) { tiltZone = null; return; }
+    if (m < TILT_ON) return;
+    if (tiltZone && Math.abs(ax - ay) < TILT_BIAS) return;
+    const z = ax > ay ? (x > 0 ? 3 : 2) : (y > 0 ? 1 : 0);
+    if (z === tiltZone) return;
+    tiltZone = z;
+    onDir(DIRS[z]);
+  }
+  function setTilt(on) {
+    if (on === tiltOn) return;
+    tiltOn = on; tiltBase = null; tiltZone = null;
+    win[on ? 'addEventListener' : 'removeEventListener']('deviceorientation', onTilt);
+  }
+  function enableTilt() {
+    const D = typeof DeviceOrientationEvent !== 'undefined' ? DeviceOrientationEvent : null;
+    if (D && typeof D.requestPermission === 'function') {
+      D.requestPermission().then((r) => setTilt(r === 'granted' && settings.tilt)).catch(() => setTilt(false));
+    } else setTilt(true);
+  }
+
   let padPrev = { up: false, down: false, left: false, right: false, a: false, start: false, b: false, any: false };
   function pollPad() {
     const gps = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : null;
@@ -741,6 +778,18 @@
       el.optSfx.addEventListener('change', () => {
         settings.sfx = !!el.optSfx.checked; saveSettings(); initAudio(); sfx('menu_move');
       });
+    }
+    if (el.optTilt && tiltSupported()) {
+      el.optTilt.closest('label').hidden = false;
+      el.optTilt.checked = settings.tilt;
+      if (settings.tilt) setTilt(true);
+      el.optTilt.addEventListener('change', () => {
+        settings.tilt = !!el.optTilt.checked; saveSettings(); initAudio(); sfx('menu_move');
+        if (settings.tilt) enableTilt(); else setTilt(false);
+      });
+    }
+    if (win.screen && win.screen.orientation && win.screen.orientation.addEventListener) {
+      win.screen.orientation.addEventListener('change', () => { tiltBase = null; });
     }
     resetWorld(true);
     setPhase('title');

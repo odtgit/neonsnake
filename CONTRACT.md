@@ -36,4 +36,4 @@ Files in games/neon-snake/: index.html, audio.js, render.js, game.js. Classic sc
 }
 
 ## Gameplay rules game.js must keep
-Tick-based logic with requestAnimationFrame accumulator, render interpolation, turn grace window (redo step if turn arrives in first 30% of tick), 2-key turn buffer, no reversal, P/Esc pause, tick starts 150ms, -15ms every 5 food, min 60ms (slow powerup multiplies tick). Walls kill (ghost passes through self + wraps walls). High score in localStorage key "lighthouse.neonsnake.highscore". Swipe on touch.
+Tick-based logic with requestAnimationFrame accumulator, render interpolation, turn grace window (redo step if turn arrives in first 30% of tick), 2-key turn buffer, no reversal, P/Esc pause, tick starts 150ms, -15ms every 5 food, min 60ms (slow powerup multiplies tick). Walls kill (ghost passes through self + wraps walls). High score in localStorage key "lighthouse.neonsnake.highscore". Swipe on touch. Optional tilt steering (deviceorientation, setting key tilt).

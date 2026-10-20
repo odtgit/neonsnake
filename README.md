@@ -4,7 +4,7 @@ Synthwave snake for the browser. No build, no dependencies, no assets: visuals a
 
 Play: open `index.html` in a browser (works from `file://`).
 
-Controls: arrows / WASD, swipe, gamepad. P or Esc pause, M mute, Space/Enter retry.
+Controls: arrows / WASD, swipe, tilt (enable TILT on the title screen; neutral is captured at start/resume), gamepad. P or Esc pause, M mute, Space/Enter retry.
 
 Features: combos, levels with obstacles from level 3, powerups (slow, ghost, magnet, double), title demo AI, adaptive synthwave soundtrack.
 
