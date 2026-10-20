@@ -2,7 +2,7 @@
   'use strict';
 
   const N = 24, START_TICK = 150, STEP = 15, MIN_TICK = 60, GRACE = 0.5, QMAX = 2;
-  const TILT_ON = 7, TILT_OFF = 3.5, TILT_HYS = 15, TILT_TAU = 45, TILT_DRIFT = 2500;
+  const TILT_DRIFT = 2500, TILT_DEF = { tiltSens: 6, tiltSmooth: 3, tiltHold: 15, tiltAuto: true };
   const FOOD_PER_LEVEL = 5, BASE_PTS = 10, SLOW_MUL = 1.6, MAG_R = 5, PU_TTL = 10000;
   const DUR = { slow: 6000, ghost: 5000, magnet: 7000, double: 8000 };
   const KINDS = Object.keys(DUR);
@@ -31,7 +31,8 @@
     toast: $('toast'), mute: $('mute'),
     ovScore: $('ov-score'), ovFood: $('ov-food'), ovBase: $('ov-base'), ovCombo: $('ov-combo'),
     ovDbl: $('ov-dbl'), ovMax: $('ov-max'), ovLevel: $('ov-level'), ovHigh: $('ov-high'),
-    ovNew: $('ov-new'), optMusic: $('opt-music'), optSfx: $('opt-sfx'), optTilt: $('opt-tilt'), btnPause: $('btn-pause')
+    ovNew: $('ov-new'), optMusic: $('opt-music'), optSfx: $('opt-sfx'), optTilt: $('opt-tilt'), btnPause: $('btn-pause'),
+    btnOpts: $('btn-opts'), optsDone: $('opts-done'), optsReset: $('opts-reset'), optAuto: $('opt-tiltAuto')
   };
 
   const rnd = (n) => Math.floor(Math.random() * n);
@@ -45,13 +46,17 @@
   let spawnIn, maxCombo, basePts, comboBonus, dblBonus, newBest, lastIntensity = -1, intensityAt = 0;
   let high = 0, dispScore = 0, dispHigh = 0, celebAt = 0, toastUntil = 0, pausedFrom = 'playing';
   let muted = false, audioReady = false, reducedMotion = false;
-  let settings = { music: true, sfx: true, tilt: false };
+  let settings = Object.assign({ music: true, sfx: true, tilt: false }, TILT_DEF);
   let last = null;
 
   try { high = Number(localStorage.getItem(HIGH_KEY)) || 0; } catch (e) { high = 0; }
   try {
     const s = JSON.parse(localStorage.getItem(SET_KEY));
-    if (s && typeof s === 'object') settings = { music: s.music !== false, sfx: s.sfx !== false, tilt: s.tilt === true };
+    if (s && typeof s === 'object') {
+      settings.music = s.music !== false; settings.sfx = s.sfx !== false; settings.tilt = s.tilt === true;
+      for (const k of ['tiltSens', 'tiltSmooth', 'tiltHold']) if (typeof s[k] === 'number' && isFinite(s[k])) settings[k] = s[k];
+      if (typeof s.tiltAuto === 'boolean') settings.tiltAuto = s.tiltAuto;
+    }
   } catch (e) { /* defaults */ }
   try {
     const mq = win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)');
@@ -94,6 +99,22 @@
     phase = p; phaseMs = 0;
     if (app) app.setAttribute('data-phase', p);
     if (p === 'playing') tiltBase = null;
+    wake(p === 'playing');
+  }
+
+  let wakeLock = null, wakeWant = false;
+  function wake(on) {
+    wakeWant = on;
+    const wl = navigator.wakeLock;
+    if (!wl) return;
+    if (on && !wakeLock) {
+      wakeLock = 1;
+      wl.request('screen').then((l) => {
+        wakeLock = l;
+        l.addEventListener('release', () => { if (wakeLock === l) wakeLock = null; });
+        if (!wakeWant) { wakeLock = null; l.release(); }
+      }).catch(() => { wakeLock = null; });
+    } else if (!on && wakeLock && wakeLock !== 1) { const l = wakeLock; wakeLock = null; l.release().catch(() => {}); }
   }
 
   function occupancy(extra) {
@@ -213,6 +234,7 @@
   }
 
   function toTitle() {
+    if (app) app.classList.remove('opts-open');
     resetWorld(true);
     setPhase('title');
     sfx('menu_select');
@@ -536,7 +558,7 @@
     if (key === 'Shift' || key === 'Control' || key === 'Alt' || key === 'Meta' || key === 'CapsLock' || key === 'Tab') return;
     const onInput = e.target && e.target.tagName === 'INPUT';
     if (phase === 'title') {
-      if (onInput && (key === ' ' || key === 'Enter')) return;
+      if (onInput || (app && app.classList.contains('opts-open'))) { if (key === 'Escape') showOpts(false); return; }
       if (e.preventDefault) e.preventDefault();
       startGame();
       return;
@@ -557,7 +579,7 @@
   }
 
   let tx = 0, ty = 0, tActive = false, tSwiped = false, tapAt = -1e9;
-  const inUi = (t) => !!(t && t.closest && t.closest('button,.settings,label,input'));
+  const inUi = (t) => !!(t && t.closest && t.closest('button,.settings,.opts,label,input'));
   function swipeMin() { return Math.max(22, Math.min(win.innerWidth || 600, win.innerHeight || 600) * 0.035); }
   function onTouchStart(e) {
     initAudio();
@@ -624,24 +646,28 @@
     const a = ((screenAngle() % 360) + 360) % 360;
     const x = a === 90 ? db : a === 180 ? -dg : a === 270 ? -db : dg;
     const y = a === 90 ? -dg : a === 180 ? -db : a === 270 ? dg : db;
-    const k = 1 - Math.exp(-dt / TILT_TAU);
+    const tau = settings.tiltSmooth * 15, k = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
     tsx += (x - tsx) * k; tsy += (y - tsy) * k;
     dbg.x = tsx; dbg.y = tsy;
-    const m = Math.hypot(tsx, tsy);
-    if (m < TILT_OFF) {
+    const m = Math.hypot(tsx, tsy), on = 13 - settings.tiltSens;
+    if (m < on / 2) {
       tiltZone = null;
-      const d = dt / TILT_DRIFT;
+      const d = settings.tiltAuto ? dt / TILT_DRIFT : 0;
       tiltBase.b += db * d; tiltBase.g += dg * d;
       return;
     }
-    if (m < TILT_ON) return;
+    if (m < on) return;
     const ang = Math.atan2(tsy, tsx) * 180 / Math.PI;
-    if (tiltZone !== null && Math.abs(wrap(ang - ZANG[tiltZone])) < 45 + TILT_HYS) return;
+    if (tiltZone !== null && Math.abs(wrap(ang - ZANG[tiltZone])) < 45 + settings.tiltHold) return;
     let z = 0;
     for (let i = 1; i < 4; i++) if (Math.abs(wrap(ang - ZANG[i])) < Math.abs(wrap(ang - ZANG[z]))) z = i;
     if (z === tiltZone) return;
     tiltZone = z;
     onDir(DIRS[z]);
+  }
+  function showOpts(on) {
+    if (app) app.classList[on ? 'add' : 'remove']('opts-open');
+    sfx(on ? 'menu_select' : 'menu_move');
   }
   function setTilt(on) {
     if (on === tiltOn) return;
@@ -813,7 +839,7 @@
     doc.addEventListener('touchend', onTouchEnd);
     doc.addEventListener('touchcancel', onTouchEnd);
     doc.addEventListener('click', onClick);
-    doc.addEventListener('visibilitychange', () => { if (doc.hidden || doc.visibilityState === 'hidden') pause(); });
+    doc.addEventListener('visibilitychange', () => { if (doc.hidden || doc.visibilityState === 'hidden') pause(); else if (wakeWant) wake(true); });
     doc.addEventListener('contextmenu', (e) => { if (e.preventDefault) e.preventDefault(); });
     if (el.btnPause) el.btnPause.addEventListener('click', () => { if (phase === 'playing') pause(); else resume(); });
     if (el.mute) el.mute.addEventListener('click', toggleMute);
@@ -830,7 +856,6 @@
       });
     }
     if (el.optTilt && tiltSupported()) {
-      el.optTilt.closest('label').hidden = false;
       el.optTilt.checked = settings.tilt;
       if (settings.tilt) setTilt(true);
       el.optTilt.addEventListener('change', () => {
@@ -838,6 +863,24 @@
         if (settings.tilt) enableTilt(); else setTilt(false);
       });
     }
+    const rng = {};
+    const showVal = (i) => { const o = i.parentNode && i.parentNode.querySelector('output'); if (o) o.textContent = i.value; };
+    for (const k of ['tiltSens', 'tiltSmooth', 'tiltHold']) {
+      const i = $('opt-' + k);
+      if (!i) continue;
+      rng[k] = i;
+      i.addEventListener('input', () => { settings[k] = Number(i.value); showVal(i); saveSettings(); });
+    }
+    const syncOpts = () => {
+      for (const k in rng) { rng[k].value = settings[k]; showVal(rng[k]); }
+      if (el.optAuto) el.optAuto.checked = settings.tiltAuto;
+    };
+    syncOpts();
+    if (el.optAuto) el.optAuto.addEventListener('change', () => { settings.tiltAuto = !!el.optAuto.checked; saveSettings(); sfx('menu_move'); });
+    if (el.optsReset) el.optsReset.addEventListener('click', () => { Object.assign(settings, TILT_DEF); saveSettings(); syncOpts(); sfx('menu_move'); });
+    if (el.btnOpts) el.btnOpts.addEventListener('click', () => { initAudio(); showOpts(true); });
+    if (el.optsDone) el.optsDone.addEventListener('click', () => showOpts(false));
+    if (app && tiltSupported()) app.classList.add('can-tilt');
     if (win.screen && win.screen.orientation && win.screen.orientation.addEventListener) {
       win.screen.orientation.addEventListener('change', () => { tiltBase = null; });
     }
