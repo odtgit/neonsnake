@@ -2,7 +2,7 @@
   'use strict';
 
   const N = 24, START_TICK = 150, STEP = 15, MIN_TICK = 60, GRACE = 0.5, QMAX = 2;
-  const TILT_ON = 14, TILT_OFF = 8, TILT_BIAS = 4;
+  const TILT_ON = 7, TILT_OFF = 3.5, TILT_HYS = 15, TILT_TAU = 45, TILT_DRIFT = 2500;
   const FOOD_PER_LEVEL = 5, BASE_PTS = 10, SLOW_MUL = 1.6, MAG_R = 5, PU_TTL = 10000;
   const DUR = { slow: 6000, ghost: 5000, magnet: 7000, double: 8000 };
   const KINDS = Object.keys(DUR);
@@ -586,7 +586,8 @@
     confirmAction();
   }
 
-  let tiltBase = null, tiltZone = null, tiltOn = false;
+  let tiltBase = null, tiltZone = null, tiltOn = false, tsx = 0, tsy = 0, tiltT = 0;
+  const ZANG = [-90, 90, 180, 0];
   const tiltSupported = () => typeof DeviceOrientationEvent !== 'undefined' && (navigator.maxTouchPoints || 0) > 0;
   const wrap = (a) => ((a + 540) % 360) - 180;
   function screenAngle() {
@@ -616,17 +617,28 @@
   function onTilt(e) {
     dbg.n++; dbg.b = e.beta; dbg.g = e.gamma;
     if (e.beta == null || e.gamma == null) return;
-    if (!tiltBase) { tiltBase = { b: e.beta, g: e.gamma }; tiltZone = null; return; }
+    const now = performance.now(), dt = Math.min(200, now - tiltT);
+    tiltT = now;
+    if (!tiltBase) { tiltBase = { b: e.beta, g: e.gamma }; tiltZone = null; tsx = tsy = 0; return; }
     const db = wrap(e.beta - tiltBase.b), dg = wrap(e.gamma - tiltBase.g);
     const a = ((screenAngle() % 360) + 360) % 360;
     const x = a === 90 ? db : a === 180 ? -dg : a === 270 ? -db : dg;
     const y = a === 90 ? -dg : a === 180 ? -db : a === 270 ? dg : db;
-    dbg.x = x; dbg.y = y;
-    const ax = Math.abs(x), ay = Math.abs(y), m = Math.max(ax, ay);
-    if (m < TILT_OFF) { tiltZone = null; return; }
+    const k = 1 - Math.exp(-dt / TILT_TAU);
+    tsx += (x - tsx) * k; tsy += (y - tsy) * k;
+    dbg.x = tsx; dbg.y = tsy;
+    const m = Math.hypot(tsx, tsy);
+    if (m < TILT_OFF) {
+      tiltZone = null;
+      const d = dt / TILT_DRIFT;
+      tiltBase.b += db * d; tiltBase.g += dg * d;
+      return;
+    }
     if (m < TILT_ON) return;
-    if (tiltZone && Math.abs(ax - ay) < TILT_BIAS) return;
-    const z = ax > ay ? (x > 0 ? 3 : 2) : (y > 0 ? 1 : 0);
+    const ang = Math.atan2(tsy, tsx) * 180 / Math.PI;
+    if (tiltZone !== null && Math.abs(wrap(ang - ZANG[tiltZone])) < 45 + TILT_HYS) return;
+    let z = 0;
+    for (let i = 1; i < 4; i++) if (Math.abs(wrap(ang - ZANG[i])) < Math.abs(wrap(ang - ZANG[z]))) z = i;
     if (z === tiltZone) return;
     tiltZone = z;
     onDir(DIRS[z]);
