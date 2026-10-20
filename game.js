@@ -556,14 +556,14 @@
     onDir(k);
   }
 
-  let tx = 0, ty = 0, tActive = false;
+  let tx = 0, ty = 0, tActive = false, tSwiped = false, tapAt = -1e9;
   const inUi = (t) => !!(t && t.closest && t.closest('button,.settings,label,input'));
   function swipeMin() { return Math.max(22, Math.min(win.innerWidth || 600, win.innerHeight || 600) * 0.035); }
   function onTouchStart(e) {
     initAudio();
     if (inUi(e.target)) return;
     const t = e.changedTouches[0];
-    tx = t.clientX; ty = t.clientY; tActive = true;
+    tx = t.clientX; ty = t.clientY; tActive = true; tSwiped = false;
     if (e.cancelable && e.preventDefault) e.preventDefault();
   }
   function onTouchMove(e) {
@@ -571,13 +571,18 @@
     if (e.cancelable && e.preventDefault) e.preventDefault();
     const t = e.changedTouches[0], dx = t.clientX - tx, dy = t.clientY - ty;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < swipeMin()) return;
+    tSwiped = true;
     onDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? DIRS[3] : DIRS[2]) : (dy > 0 ? DIRS[1] : DIRS[0]));
     tx = t.clientX; ty = t.clientY;
   }
-  function onTouchEnd() { tActive = false; initAudio(); }
+  function onTouchEnd(e) {
+    const tap = tActive && !tSwiped && e.type === 'touchend';
+    tActive = false; initAudio();
+    if (tap) { tapAt = timeMs; confirmAction(); }
+  }
   function onClick(e) {
     initAudio();
-    if (inUi(e.target)) return;
+    if (inUi(e.target) || timeMs - tapAt < 600) return;
     confirmAction();
   }
 
