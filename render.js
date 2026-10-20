@@ -236,6 +236,24 @@ function create(canvas) {
       stX[q] = rs() * W; stY[q] = rs() * hz * 0.92;
       stZ[q] = 0.2 + rs() * 0.8; stP[q] = rs() * TAU;
     }
+    g.globalCompositeOperation = 'lighter';
+    for (q = 0; q < NS; q++) {
+      g.globalAlpha = (0.55 + 0.45 * Math.sin(stP[q])) * (0.35 + stZ[q] * 0.65);
+      g.fillStyle = q % 5 === 0 ? '#ff9de8' : q % 7 === 0 ? '#9defff' : '#e6e9ff';
+      var z = Math.max(1, stZ[q] * 2.2 * dpr);
+      g.fillRect(stX[q], stY[q], z, z);
+    }
+    g.strokeStyle = '#ff3de0';
+    for (q = 0; q < 14; q++) {
+      var p = q / 14, y = hz + (H - hz) * p * p;
+      g.globalAlpha = 0.12 * p;
+      g.lineWidth = 4 * dpr * p + 1;
+      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+      g.globalAlpha = 0.85 * p;
+      g.lineWidth = Math.max(1, 1.4 * dpr * (0.4 + p));
+      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     void c;
   }
 
@@ -719,33 +737,10 @@ function create(canvas) {
     drawHud(g, k, glow, S);
   }
 
-  function drawBackdrop(g, S) {
+  function drawBackdrop(g) {
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     g.drawImage(sky.c, 0, 0);
-    var i, tw;
-    g.globalCompositeOperation = 'lighter';
-    for (i = 0; i < NS; i++) {
-      var x = (stX[i] + T * 0.006 * stZ[i] * dpr) % W;
-      tw = 0.55 + 0.45 * Math.sin(T / 500 + stP[i]);
-      g.globalAlpha = tw * (0.35 + stZ[i] * 0.65);
-      g.fillStyle = i % 5 === 0 ? '#ff9de8' : i % 7 === 0 ? '#9defff' : '#e6e9ff';
-      var z = Math.max(1, stZ[i] * 2.2 * dpr);
-      g.fillRect(x, stY[i], z, z);
-    }
-    var sp = 0.00032 * (1 + (S.level || 1) * 0.06) * T % 1;
-    g.strokeStyle = '#ff3de0';
-    var NL = 14;
-    for (i = 0; i < NL; i++) {
-      var p = (i / NL + sp) % 1, y = hz + (H - hz) * p * p;
-      g.globalAlpha = 0.12 * p;
-      g.lineWidth = 4 * dpr * p + 1;
-      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
-      g.globalAlpha = 0.85 * p;
-      g.lineWidth = Math.max(1, 1.4 * dpr * (0.4 + p));
-      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
-    }
-    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   }
 
   function getTmp(o) {
@@ -818,7 +813,7 @@ function create(canvas) {
     buildSnake(S);
 
     var g = ctx;
-    drawBackdrop(g, S);
+    drawBackdrop(g);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = phase === 'title' ? 0.85 : 1;
     g.drawImage(boardC.c, ox + shx, oy + shy);
@@ -888,10 +883,6 @@ function create(canvas) {
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = 1;
     g.drawImage(ovl.c, 0, 0);
-    var by = ((T / 7000) % 1.2 - 0.1) * H;
-    var bg = g.createLinearGradient(0, by - 60 * dpr, 0, by);
-    bg.addColorStop(0, 'rgba(120,200,255,0)'); bg.addColorStop(1, 'rgba(120,200,255,.04)');
-    g.fillStyle = bg; g.fillRect(0, by - 60 * dpr, W, 60 * dpr);
   };
 
   return r;

@@ -593,13 +593,35 @@
     const o = win.screen && win.screen.orientation;
     return o && typeof o.angle === 'number' ? o.angle : (Number(win.orientation) || 0);
   }
+  const DBG = /[?&]debug\b/.test(win.location.search || '');
+  const dbg = { n: 0, b: null, g: null, x: 0, y: 0, fps: 0, worst: 0 };
+  let dbgEl = null, dbgAt = 0, dbgFrames = 0;
+  function debugHud(dt) {
+    if (!DBG) return;
+    dbgFrames++; dbg.worst = Math.max(dbg.worst, dt);
+    if (timeMs - dbgAt < 500) return;
+    dbg.fps = Math.round(dbgFrames * 1000 / (timeMs - dbgAt || 1)); dbgAt = timeMs; dbgFrames = 0;
+    if (!dbgEl) {
+      dbgEl = doc.createElement('pre');
+      dbgEl.style.cssText = 'position:fixed;left:6px;top:40%;margin:0;padding:6px;font:11px monospace;color:#0f0;background:rgba(0,0,0,.7);z-index:9;pointer-events:none';
+      doc.body.appendChild(dbgEl);
+    }
+    const f = (v) => v == null ? '-' : v.toFixed(1);
+    dbgEl.textContent = 'fps ' + dbg.fps + ' worst ' + Math.round(dbg.worst) + 'ms dpr ' + (win.devicePixelRatio || 1) +
+      '\ntilt sup ' + tiltSupported() + ' on ' + tiltOn + ' set ' + settings.tilt + ' secure ' + win.isSecureContext +
+      '\nevents ' + dbg.n + ' b ' + f(dbg.b) + ' g ' + f(dbg.g) + ' angle ' + screenAngle() +
+      '\nx ' + f(dbg.x) + ' y ' + f(dbg.y) + ' zone ' + tiltZone + ' base ' + (tiltBase ? f(tiltBase.b) + '/' + f(tiltBase.g) : '-');
+    dbg.worst = 0;
+  }
   function onTilt(e) {
+    dbg.n++; dbg.b = e.beta; dbg.g = e.gamma;
     if (e.beta == null || e.gamma == null) return;
     if (!tiltBase) { tiltBase = { b: e.beta, g: e.gamma }; tiltZone = null; return; }
     const db = wrap(e.beta - tiltBase.b), dg = wrap(e.gamma - tiltBase.g);
     const a = ((screenAngle() % 360) + 360) % 360;
     const x = a === 90 ? db : a === 180 ? -dg : a === 270 ? -db : dg;
     const y = a === 90 ? -dg : a === 180 ? -db : a === 270 ? dg : db;
+    dbg.x = x; dbg.y = y;
     const ax = Math.abs(x), ay = Math.abs(y), m = Math.max(ax, ay);
     if (m < TILT_OFF) { tiltZone = null; return; }
     if (m < TILT_ON) return;
@@ -743,6 +765,7 @@
     celebrate();
     updateAudio();
     hud(dt);
+    debugHud(dt);
     if (R) {
       try { R.draw(buildState(), dt); } catch (err) {
         if (timeMs - errAt > 2000) { errAt = timeMs; console.error(err); }
