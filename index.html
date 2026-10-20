@@ -138,6 +138,11 @@ h2 { margin: 0 0 14px; font: 900 clamp(34px, 8vw, 64px)/1 var(--font); font-styl
 .newbest.on { display: block; }
 @keyframes bounce { from { transform: scale(1) rotate(-2deg); } to { transform: scale(1.12) rotate(2deg); } }
 
+.ver {
+  position: absolute; right: calc(12px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom));
+  font: 600 11px var(--mono); letter-spacing: .15em; color: rgba(233, 228, 255, .4);
+}
+
 @media (max-width: 520px) { .settings { gap: 12px; padding: 8px 12px; } .rows { font-size: 13px; } }
 @media (prefers-reduced-motion: reduce) {
   .logo .b, .start, #combo-bar.low, .newbest, .pop, .chip { animation: none; }
@@ -181,6 +186,7 @@ h2 { margin: 0 0 14px; font: 900 clamp(34px, 8vw, 64px)/1 var(--font); font-styl
         <label hidden><input type="checkbox" id="opt-tilt"> TILT</label>
       </div>
     </div>
+    <div class="ver">v1.2.0</div>
   </section>
 
   <section class="ov" id="pause">
